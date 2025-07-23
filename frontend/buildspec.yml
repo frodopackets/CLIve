@@ -1,0 +1,72 @@
+version: 0.2
+
+# CodeBuild buildspec for AI Assistant CLI frontend deployment
+# This buildspec builds the React frontend and deploys it to S3 with CloudFront invalidation
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo "Installing dependencies..."
+      - cd $CODEBUILD_SRC_DIR/frontend
+      - npm ci --production=false
+      
+  pre_build:
+    commands:
+      - echo "Running pre-build tasks..."
+      - echo "Build started on `date`"
+      - echo "Node version:" && node --version
+      - echo "NPM version:" && npm --version
+      - echo "Current directory:" && pwd
+      - echo "Environment variables:"
+      - echo "  S3_BUCKET=$S3_BUCKET"
+      - echo "  CLOUDFRONT_DISTRIBUTION_ID=$CLOUDFRONT_DISTRIBUTION_ID"
+      - echo "  BUILD_OUTPUT_DIR=$BUILD_OUTPUT_DIR"
+      
+  build:
+    commands:
+      - echo "Building the React application..."
+      - npm run build
+      - echo "Build completed successfully"
+      - echo "Listing build output directory:"
+      - ls -la $BUILD_OUTPUT_DIR/
+      
+  post_build:
+    commands:
+      - echo "Starting deployment to S3..."
+      - echo "Syncing files to S3 bucket: $S3_BUCKET"
+      
+      # Sync all files except HTML files first (with long cache headers)
+      - aws s3 sync $BUILD_OUTPUT_DIR/ s3://$S3_BUCKET/ 
+        --exclude "*.html" 
+        --cache-control "public, max-age=31536000, immutable" 
+        --delete
+        
+      # Sync HTML files with short cache headers (for SPA routing)
+      - aws s3 sync $BUILD_OUTPUT_DIR/ s3://$S3_BUCKET/ 
+        --include "*.html" 
+        --cache-control "public, max-age=0, must-revalidate" 
+        --delete
+        
+      - echo "S3 sync completed successfully"
+      
+      - echo "Creating CloudFront invalidation..."
+      - aws cloudfront create-invalidation 
+        --distribution-id $CLOUDFRONT_DISTRIBUTION_ID 
+        --paths "/*"
+        
+      - echo "CloudFront invalidation created successfully"
+      - echo "Deployment completed on `date`"
+
+# Artifacts are not needed since we're deploying directly to S3
+artifacts:
+  files:
+    - '**/*'
+  base-directory: $BUILD_OUTPUT_DIR
+  name: frontend-build-$(date +%Y-%m-%d-%H-%M-%S)
+
+# Cache node_modules to speed up builds
+cache:
+  paths:
+    - 'frontend/node_modules/**/*'

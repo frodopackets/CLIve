@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Silent Callback</title>
+</head>
+<body>
+    <script>
+        // This page is used for silent token renewal
+        // It will be loaded in an iframe and should automatically handle the callback
+        if (window.parent && window.parent !== window) {
+            // We're in an iframe, post message to parent
+            const urlParams = new URLSearchParams(window.location.search);
+            const hash = window.location.hash;
+            
+            if (hash || urlParams.toString()) {
+                window.parent.postMessage({
+                    type: 'silent-callback',
+                    url: window.location.href
+                }, window.location.origin);
+            }
+        }
+    </script>
+</body>
+</html>
